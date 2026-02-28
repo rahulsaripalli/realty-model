@@ -1,160 +1,260 @@
+"""
+Annual Cash Flows sheet — fully formula-driven.
+All cells reference the Assumptions sheet so changing any
+input cascades through rent growth, expenses, NOI, and cash flow.
+"""
+from openpyxl.utils import get_column_letter
+
 from realty_model.renderers.base_renderer import BaseRenderer
+from realty_model.renderers.constants import (
+    ASM_EQUITY_ROW,
+    ASM_GROSS_RENT_ROW, ASM_VACANCY_ROW, ASM_OTHER_INCOME_ROW, ASM_RENT_GROWTH_ROW,
+    ASM_TAXES_ROW, ASM_INSURANCE_ROW, ASM_MGMT_ROW, ASM_MAINTENANCE_ROW,
+    ASM_UTILITIES_ROW, ASM_LANDSCAPING_ROW, ASM_CAPEX_ROW, ASM_EXP_GROWTH_ROW,
+    ASM_EXIT_CAP_ROW, ASM_COST_OF_SALE_ROW,
+    CF_ROW_YEAR_HDR, CF_ROW_GROSS_RENT, CF_ROW_VACANCY, CF_ROW_OTHER_INCOME,
+    CF_ROW_EGI, CF_ROW_TAXES, CF_ROW_INSURANCE, CF_ROW_MGMT,
+    CF_ROW_MAINTENANCE, CF_ROW_UTILITIES, CF_ROW_LANDSCAPING, CF_ROW_CAPEX,
+    CF_ROW_TOTAL_EXPENSES, CF_ROW_NOI, CF_ROW_DS_INTEREST, CF_ROW_DS_PRINCIPAL,
+    CF_ROW_DS_TOTAL, CF_ROW_CASH_FLOW, CF_ROW_COC, CF_ROW_DSCR,
+    CF_ROW_LOAN_BALANCE, CF_ROW_CUM_CF,
+    CF_ROW_EXIT_VALUE, CF_ROW_SALE_COSTS, CF_ROW_NET_PROCEEDS,
+    CF_ROW_NET_EQUITY, CF_ROW_TOTAL_RETURN, CF_ROW_EQUITY_MULTIPLE,
+    CF_ROW_IRR_ARRAY,
+    AMORT_SHEET, AMORT_COL_YEAR,
+    AMORT_COL_INT, AMORT_COL_PRIN, AMORT_COL_BAL, AMORT_COL_MONTH,
+    asm,
+)
 from realty_model.models.results import FinancialResults
 from realty_model.models.property import ProFormaInput
 
 
+def _col(year: int) -> int:
+    """Year 1 → col 2 (B), Year 2 → col 3 (C), ..."""
+    return year + 1
+
+
+def _cl(year: int) -> str:
+    """Column letter for given year (1-indexed)."""
+    return get_column_letter(_col(year))
+
+
 class AnnualCashFlowRenderer(BaseRenderer):
+
     def render(self, wb, results: FinancialResults, inp: ProFormaInput):
         ws = wb.create_sheet("Annual Cash Flows")
         ws.sheet_view.showGridLines = False
 
         hold = inp.assumptions.hold_period_years
-        n_cols = hold + 1   # label col + year cols
+        n_cols = hold + 1
 
         # Title
-        self.add_title_row(ws, 1, "Annual Cash Flow Projections", n_cols)
+        self.add_title_row(ws, 1, "Annual Cash Flow Projections  —  Formulas update when Assumptions tab changes", n_cols)
 
         # Column widths
-        self.set_col_width(ws, 1, 30)
-        for col in range(2, n_cols + 1):
-            self.set_col_width(ws, col, 15)
-
-        # Year headers row 2
-        ws.cell(row=2, column=1, value="").fill = self._fill(self.HDR_BG)
+        self.set_col_width(ws, 1, 34)
         for y in range(1, hold + 1):
-            cell = ws.cell(row=2, column=y + 1, value=f"Year {y}")
+            self.set_col_width(ws, _col(y), 15)
+
+        # Year header row
+        ws.cell(row=CF_ROW_YEAR_HDR, column=1).fill = self._fill(self.HDR_BG)
+        for y in range(1, hold + 1):
+            cell = ws.cell(row=CF_ROW_YEAR_HDR, column=_col(y), value=y)
             self.style_header(cell)
 
-        ws.freeze_panes = 'B3'
+        ws.freeze_panes = f'B{CF_ROW_YEAR_HDR + 1}'
 
-        cf_df = results.annual_cash_flows
+        # Write labels and formulas
+        self._write_labels(ws, hold)
+        for y in range(1, hold + 1):
+            self._write_year(ws, y, hold)
 
-        def year_val(col_name, year_idx):
-            return cf_df.loc[year_idx, col_name] if year_idx < len(cf_df) else None
+        # Hidden IRR array (used by Summary sheet)
+        ws.row_dimensions[CF_ROW_IRR_ARRAY].hidden = True
+        ws.cell(row=CF_ROW_IRR_ARRAY, column=1, value="IRR_ARRAY")
+        # Col 2 = initial investment (negative)
+        ws.cell(row=CF_ROW_IRR_ARRAY, column=2,
+                value=f"=-{asm(ASM_EQUITY_ROW)}")
+        for y in range(1, hold + 1):
+            col = _col(y)
+            cl = _cl(y)
+            if y < hold:
+                f = f"={cl}{CF_ROW_CASH_FLOW}"
+            else:
+                f = f"={cl}{CF_ROW_CASH_FLOW}+{cl}{CF_ROW_NET_EQUITY}"
+            ws.cell(row=CF_ROW_IRR_ARRAY, column=col + 1, value=f)
 
-        row = 3
+    # ── Labels ────────────────────────────────────────────────────────────
 
-        # Helper to write a data row
-        def write_row(label, col_name=None, values=None, fmt='currency',
-                      bold=False, bg=None, section=False, indent=0, negate=False):
-            nonlocal row
-            if section:
-                ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n_cols)
-                self.style_section(ws.cell(row=row, column=1), label)
-                row += 1
-                return
+    def _write_labels(self, ws, hold: int):
+        def sec(row, text):
+            ws.merge_cells(start_row=row, start_column=1,
+                           end_row=row, end_column=hold + 1)
+            self.style_section(ws.cell(row=row, column=1), text)
 
-            cell_l = ws.cell(row=row, column=1, value=label)
-            alt_bg = self.GRAY_BG if row % 2 == 0 else None
-            effective_bg = bg or alt_bg
-            cell_l.font = self._font(bold=bold, size=10)
-            cell_l.alignment = self._align(h='left', indent=indent)
-            if effective_bg:
-                cell_l.fill = self._fill(effective_bg)
+        def lbl(row, text, bold=False):
+            c = ws.cell(row=row, column=1, value=text)
+            c.font = self._font(bold=bold, size=10)
+            c.alignment = self._align(h='left')
+            if row % 2 == 0:
+                c.fill = self._fill(self.GRAY_BG)
 
-            for y in range(hold):
-                if values is not None:
-                    val = values[y]
-                elif col_name is not None:
-                    val = cf_df.iloc[y][col_name]
-                else:
-                    val = None
+        sec(3,                     "INCOME")
+        lbl(CF_ROW_GROSS_RENT,     "Gross Scheduled Rent")
+        lbl(CF_ROW_VACANCY,        "(Less) Vacancy Loss")
+        lbl(CF_ROW_OTHER_INCOME,   "Other Income")
+        lbl(7,                     "")
+        lbl(CF_ROW_EGI,            "Effective Gross Income (EGI)", bold=True)
 
-                if negate and val is not None:
-                    val = -abs(val)
+        sec(9,                     "OPERATING EXPENSES")
+        lbl(CF_ROW_TAXES,          "Property Taxes")
+        lbl(CF_ROW_INSURANCE,      "Insurance")
+        lbl(CF_ROW_MGMT,           "Property Management")
+        lbl(CF_ROW_MAINTENANCE,    "Maintenance / Repairs")
+        lbl(CF_ROW_UTILITIES,      "Utilities")
+        lbl(CF_ROW_LANDSCAPING,    "Landscaping / Trash")
+        lbl(CF_ROW_CAPEX,          "CapEx Reserve")
+        lbl(17,                    "")
+        lbl(CF_ROW_TOTAL_EXPENSES, "Total Operating Expenses", bold=True)
 
-                cell_v = ws.cell(row=row, column=y + 2, value=val)
-                cell_v.font = self._font(bold=bold, size=10)
-                cell_v.alignment = self._align(h='right')
-                if effective_bg:
-                    cell_v.fill = self._fill(effective_bg)
-                if fmt == 'currency':
-                    self.fmt_currency(cell_v)
-                elif fmt == 'percent':
-                    self.fmt_percent(cell_v, decimals=2)
-                elif fmt == 'number':
-                    self.fmt_number(cell_v)
+        lbl(19,                    "")
+        lbl(CF_ROW_NOI,            "Net Operating Income (NOI)", bold=True)
 
-            row += 1
+        sec(21,                    "DEBT SERVICE  (sourced from Amortization Schedule tab)")
+        lbl(CF_ROW_DS_INTEREST,    "Interest")
+        lbl(CF_ROW_DS_PRINCIPAL,   "Principal")
+        lbl(CF_ROW_DS_TOTAL,       "Total Debt Service", bold=True)
 
-        # INCOME
-        write_row("INCOME", section=True)
-        write_row("Gross Scheduled Rent", col_name='Gross Rent')
-        write_row("Vacancy Loss", col_name='Vacancy Loss', negate=True)
-        write_row("Other Income", values=[
-            cf_df.iloc[y]['EGI'] - cf_df.iloc[y]['Gross Rent'] * (1 - inp.income.vacancy_rate)
-            for y in range(hold)
-        ])
-        write_row("Effective Gross Income (EGI)", col_name='EGI', bold=True,
-                  bg=self.DARK_GRAY)
+        lbl(25,                    "")
+        lbl(CF_ROW_CASH_FLOW,      "Net Cash Flow (After Debt Service)", bold=True)
+        lbl(CF_ROW_COC,            "Cash-on-Cash Return")
+        lbl(CF_ROW_DSCR,           "Debt Service Coverage Ratio (DSCR)")
 
-        # EXPENSES
-        write_row("OPERATING EXPENSES", section=True)
-        write_row("Total Operating Expenses", col_name='Total Expenses', bold=True,
-                  bg=self.DARK_GRAY, negate=True)
+        sec(29,                    "EQUITY POSITION")
+        lbl(CF_ROW_LOAN_BALANCE,   "Ending Loan Balance")
+        lbl(CF_ROW_CUM_CF,         "Cumulative Net Cash Flow")
 
-        # NOI
-        write_row("NET OPERATING INCOME", section=True)
-        write_row("NOI", col_name='NOI', bold=True, bg=self.GREEN_BG)
+        sec(32,                    "EXIT ANALYSIS  (updates with Assumptions)")
+        lbl(CF_ROW_EXIT_VALUE,     "Projected Exit Value  (NOI ÷ Exit Cap Rate)")
+        lbl(CF_ROW_SALE_COSTS,     "Cost of Sale")
+        lbl(CF_ROW_NET_PROCEEDS,   "Net Sale Proceeds")
+        lbl(CF_ROW_NET_EQUITY,     "Net Equity at Exit  (proceeds − loan payoff)", bold=True)
+        lbl(CF_ROW_TOTAL_RETURN,   "Total Return  (cum cash flow + net equity)", bold=True)
+        lbl(CF_ROW_EQUITY_MULTIPLE,"Equity Multiple", bold=True)
 
-        # DEBT SERVICE
-        write_row("DEBT SERVICE", section=True)
-        write_row("Interest",   col_name='Debt Service Interest', negate=True)
-        write_row("Principal",  col_name='Debt Service Principal', negate=True)
-        write_row("Total Debt Service", col_name='Debt Service', bold=True,
-                  bg=self.DARK_GRAY, negate=True)
+    # ── Formulas for one year column ──────────────────────────────────────
 
-        # CASH FLOW
-        write_row("CASH FLOW", section=True)
-        cf_vals = list(cf_df['Net Cash Flow'])
-        cf_bgs = [self.GREEN_BG if v >= 0 else self.RED_BG for v in cf_vals]
-        # Write cash flow row with per-cell coloring
-        label = "Net Cash Flow (After Debt)"
-        cell_l = ws.cell(row=row, column=1, value=label)
-        cell_l.font = self._font(bold=True, size=10)
-        cell_l.alignment = self._align(h='left')
-        for y in range(hold):
-            val = cf_vals[y]
-            cell_v = ws.cell(row=row, column=y + 2, value=val)
-            cell_v.font = self._font(bold=True, size=10,
-                                     color=self.GREEN_FG if val >= 0 else self.RED_FG)
-            cell_v.alignment = self._align(h='right')
-            cell_v.fill = self._fill(self.GREEN_BG if val >= 0 else self.RED_BG)
-            self.fmt_currency(cell_v)
-        row += 1
+    def _write_year(self, ws, y: int, hold: int):
+        cl      = _cl(y)
+        prev_cl = _cl(y - 1) if y > 1 else None
+        col     = _col(y)
 
-        write_row("Cash-on-Cash Return", col_name='Cash-on-Cash', fmt='percent', bold=True)
-        write_row("DSCR", values=[
-            round(cf_df.iloc[y]['NOI'] / cf_df.iloc[y]['Debt Service'], 2)
-            if cf_df.iloc[y]['Debt Service'] > 0 else 0
-            for y in range(hold)
-        ], fmt='number')
+        def put(row, formula, fmt='currency', bold=False, bg=None):
+            cell = ws.cell(row=row, column=col, value=formula)
+            cell.font = self._font(bold=bold, size=10)
+            cell.alignment = self._align(h='right')
+            default_bg = self.GRAY_BG if row % 2 == 0 else 'FFFFFF'
+            cell.fill = self._fill(bg if bg else default_bg)
+            if fmt == 'currency': self.fmt_currency(cell)
+            elif fmt == 'pct':    self.fmt_percent(cell, 2)
+            elif fmt == 'num':    self.fmt_number(cell)
 
-        # BALANCE SHEET
-        write_row("EQUITY POSITION", section=True)
-        write_row("Ending Loan Balance", col_name='Ending Loan Balance', negate=False)
-        write_row("Cumulative Cash Flow", col_name='Cumulative Cash Flow')
+        rg = asm(ASM_RENT_GROWTH_ROW)
+        eg = asm(ASM_EXP_GROWTH_ROW)
 
-        # EXIT ANALYSIS
-        write_row("EXIT ANALYSIS (Base Scenario)", section=True)
-        exit_cap = inp.assumptions.exit_cap_rate
+        # ── Income ───────────────────────────────────────────────────────
+        if y == 1:
+            put(CF_ROW_GROSS_RENT,    f"={asm(ASM_GROSS_RENT_ROW)}")
+            put(CF_ROW_OTHER_INCOME,  f"={asm(ASM_OTHER_INCOME_ROW)}")
+        else:
+            put(CF_ROW_GROSS_RENT,    f"={prev_cl}{CF_ROW_GROSS_RENT}*(1+{rg})")
+            put(CF_ROW_OTHER_INCOME,  f"={prev_cl}{CF_ROW_OTHER_INCOME}*(1+{rg})")
 
-        exit_vals = []
-        for y in range(hold):
-            noi_y = cf_df.iloc[y]['NOI']
-            exit_vals.append(noi_y / exit_cap if exit_cap > 0 else 0)
+        put(CF_ROW_VACANCY,       f"={cl}{CF_ROW_GROSS_RENT}*{asm(ASM_VACANCY_ROW)}")
+        put(CF_ROW_EGI,
+            f"={cl}{CF_ROW_GROSS_RENT}-{cl}{CF_ROW_VACANCY}+{cl}{CF_ROW_OTHER_INCOME}",
+            bold=True, bg=self.DARK_GRAY)
 
-        write_row("Projected Exit Value (at base cap)", values=exit_vals, fmt='currency', bold=False)
+        # ── Expenses ─────────────────────────────────────────────────────
+        if y == 1:
+            put(CF_ROW_TAXES,       f"={asm(ASM_TAXES_ROW)}")
+            put(CF_ROW_INSURANCE,   f"={asm(ASM_INSURANCE_ROW)}")
+            put(CF_ROW_MAINTENANCE, f"={asm(ASM_MAINTENANCE_ROW)}")
+            put(CF_ROW_UTILITIES,   f"={asm(ASM_UTILITIES_ROW)}")
+            put(CF_ROW_LANDSCAPING, f"={asm(ASM_LANDSCAPING_ROW)}")
+        else:
+            put(CF_ROW_TAXES,       f"={prev_cl}{CF_ROW_TAXES}*(1+{eg})")
+            put(CF_ROW_INSURANCE,   f"={prev_cl}{CF_ROW_INSURANCE}*(1+{eg})")
+            put(CF_ROW_MAINTENANCE, f"={prev_cl}{CF_ROW_MAINTENANCE}*(1+{eg})")
+            put(CF_ROW_UTILITIES,   f"={prev_cl}{CF_ROW_UTILITIES}*(1+{eg})")
+            put(CF_ROW_LANDSCAPING, f"={prev_cl}{CF_ROW_LANDSCAPING}*(1+{eg})")
 
-        equity_invested = (inp.property_info.purchase_price
-                           - inp.financing.loan_amount
-                           + inp.financing.closing_costs)
-        em_vals = []
-        for y in range(hold):
-            cum_cf = cf_df.iloc[y]['Cumulative Cash Flow']
-            proj_exit = exit_vals[y]
-            lb = cf_df.iloc[y]['Ending Loan Balance']
-            net_exit = proj_exit * (1 - inp.assumptions.cost_of_sale) - lb
-            em = (cum_cf + net_exit) / equity_invested if equity_invested > 0 else 0
-            em_vals.append(em)
-        write_row("Equity Multiple (cumulative)", values=em_vals, fmt='number')
+        # Mgmt & CapEx: IF percent of EGI, ELSE treat as fixed $
+        mgmt_ref  = asm(ASM_MGMT_ROW)
+        capex_ref = asm(ASM_CAPEX_ROW)
+        put(CF_ROW_MGMT,  f"=IF({mgmt_ref}<1,{cl}{CF_ROW_EGI}*{mgmt_ref},{mgmt_ref})")
+        put(CF_ROW_CAPEX, f"=IF({capex_ref}<1,{cl}{CF_ROW_EGI}*{capex_ref},{capex_ref})")
+
+        put(CF_ROW_TOTAL_EXPENSES,
+            f"=SUM({cl}{CF_ROW_TAXES}:{cl}{CF_ROW_CAPEX})",
+            bold=True, bg=self.DARK_GRAY)
+
+        # ── NOI ──────────────────────────────────────────────────────────
+        put(CF_ROW_NOI,
+            f"={cl}{CF_ROW_EGI}-{cl}{CF_ROW_TOTAL_EXPENSES}",
+            bold=True, bg=self.GREEN_BG)
+
+        # ── Debt service (SUMIF against Amortization Schedule tab) ───────
+        yr_range  = f"'Amortization Schedule'!${AMORT_COL_YEAR}:${AMORT_COL_YEAR}"
+        int_range = f"'Amortization Schedule'!${AMORT_COL_INT}:${AMORT_COL_INT}"
+        pri_range = f"'Amortization Schedule'!${AMORT_COL_PRIN}:${AMORT_COL_PRIN}"
+
+        put(CF_ROW_DS_INTEREST,
+            f"=SUMIF({yr_range},{cl}${CF_ROW_YEAR_HDR},{int_range})")
+        put(CF_ROW_DS_PRINCIPAL,
+            f"=SUMIF({yr_range},{cl}${CF_ROW_YEAR_HDR},{pri_range})")
+        put(CF_ROW_DS_TOTAL,
+            f"={cl}{CF_ROW_DS_INTEREST}+{cl}{CF_ROW_DS_PRINCIPAL}",
+            bold=True, bg=self.DARK_GRAY)
+
+        # ── Cash flow ────────────────────────────────────────────────────
+        put(CF_ROW_CASH_FLOW,
+            f"={cl}{CF_ROW_NOI}-{cl}{CF_ROW_DS_TOTAL}",
+            bold=True, bg=self.GREEN_BG)
+        put(CF_ROW_COC,
+            f"=IFERROR({cl}{CF_ROW_CASH_FLOW}/{asm(ASM_EQUITY_ROW)},0)",
+            fmt='pct')
+        put(CF_ROW_DSCR,
+            f"=IFERROR({cl}{CF_ROW_NOI}/{cl}{CF_ROW_DS_TOTAL},0)",
+            fmt='num')
+
+        # ── Equity ───────────────────────────────────────────────────────
+        # Ending loan balance: VLOOKUP on month = year*12 in Amortization tab
+        bal_range = f"'Amortization Schedule'!${AMORT_COL_MONTH}:${AMORT_COL_BAL}"
+        put(CF_ROW_LOAN_BALANCE,
+            f"=IFERROR(VLOOKUP({cl}${CF_ROW_YEAR_HDR}*12,{bal_range},6,FALSE),0)")
+
+        if y == 1:
+            put(CF_ROW_CUM_CF, f"={cl}{CF_ROW_CASH_FLOW}")
+        else:
+            put(CF_ROW_CUM_CF, f"={prev_cl}{CF_ROW_CUM_CF}+{cl}{CF_ROW_CASH_FLOW}")
+
+        # ── Exit analysis ─────────────────────────────────────────────────
+        exit_cap = asm(ASM_EXIT_CAP_ROW)
+        cos_ref  = asm(ASM_COST_OF_SALE_ROW)
+
+        put(CF_ROW_EXIT_VALUE,
+            f"=IFERROR({cl}{CF_ROW_NOI}/{exit_cap},0)")
+        put(CF_ROW_SALE_COSTS,
+            f"={cl}{CF_ROW_EXIT_VALUE}*{cos_ref}")
+        put(CF_ROW_NET_PROCEEDS,
+            f"={cl}{CF_ROW_EXIT_VALUE}-{cl}{CF_ROW_SALE_COSTS}")
+        put(CF_ROW_NET_EQUITY,
+            f"={cl}{CF_ROW_NET_PROCEEDS}-{cl}{CF_ROW_LOAN_BALANCE}",
+            bold=True)
+        put(CF_ROW_TOTAL_RETURN,
+            f"={cl}{CF_ROW_CUM_CF}+{cl}{CF_ROW_NET_EQUITY}",
+            bold=True, bg=self.GREEN_BG)
+        put(CF_ROW_EQUITY_MULTIPLE,
+            f"=IFERROR({cl}{CF_ROW_TOTAL_RETURN}/{asm(ASM_EQUITY_ROW)},0)",
+            fmt='num', bold=True)

@@ -2,6 +2,7 @@ from openpyxl import Workbook
 
 from realty_model.models.results import FinancialResults
 from realty_model.models.property import ProFormaInput
+from realty_model.renderers.assumptions import AssumptionsRenderer
 from realty_model.renderers.summary import SummaryRenderer
 from realty_model.renderers.cashflows import AnnualCashFlowRenderer
 from realty_model.renderers.amortization import AmortizationRenderer
@@ -15,6 +16,8 @@ class WorkbookRenderer:
         wb = Workbook()
         wb.remove(wb.active)  # Remove default empty sheet
 
+        # Assumptions FIRST — it's the live control panel all formulas reference
+        AssumptionsRenderer().render(wb, inp)
         SummaryRenderer().render(wb, results, inp)
         AnnualCashFlowRenderer().render(wb, results, inp)
         AmortizationRenderer().render(wb, results, inp)
@@ -26,18 +29,18 @@ class WorkbookRenderer:
 
         # Tab colors
         tab_colors = {
-            "Summary Dashboard":   "1F3864",
-            "Annual Cash Flows":   "375623",
+            "Assumptions":           "FF0000",   # red  — edit here
+            "Summary Dashboard":     "1F3864",
+            "Annual Cash Flows":     "375623",
             "Amortization Schedule": "2F5496",
-            "Sensitivity Analysis": "C9A84C",
-            "Exit Scenarios":      "7030A0",
-            "Equity Waterfall":    "C00000",
+            "Sensitivity Analysis":  "C9A84C",
+            "Exit Scenarios":        "7030A0",
+            "Equity Waterfall":      "C00000",
         }
         for sheet_name, color in tab_colors.items():
             if sheet_name in wb.sheetnames:
                 wb[sheet_name].sheet_properties.tabColor = color
 
-        # Document properties
         wb.properties.title = f"Investment Analysis - {inp.property_info.address}"
         wb.properties.creator = "RealtyModel CLI"
         wb.properties.description = (
