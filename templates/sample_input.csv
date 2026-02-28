@@ -1,0 +1,34 @@
+section,field,value,notes
+PROPERTY,address,"1234 Oak Ave, San Diego CA 92101",Full street address
+PROPERTY,property_type,Multifamily,Multifamily / Office / Retail / Industrial / Mixed-Use
+PROPERTY,year_built,1987,Four digit year
+PROPERTY,units,12,Number of rentable units
+PROPERTY,square_feet,8400,Total rentable SF
+PROPERTY,purchase_price,2400000,Total acquisition cost
+FINANCING,loan_amount,1680000,Leave blank to derive from ltv_pct
+FINANCING,ltv_pct,0.70,Used if loan_amount is blank
+FINANCING,interest_rate,0.0675,Annual rate as decimal (6.75% = 0.0675)
+FINANCING,loan_term_years,30,Amortization years
+FINANCING,interest_only_years,0,IO period before amortization begins
+FINANCING,closing_costs,48000,Lender fees + title + escrow
+INCOME,gross_scheduled_rent,192000,Annual gross rent at 100% occupancy
+INCOME,vacancy_rate,0.05,Decimal (5% = 0.05)
+INCOME,other_income,6000,Parking / laundry / storage (annual)
+INCOME,rent_growth_rate,0.03,Annual rent escalation
+EXPENSES,property_taxes,22000,Annual
+EXPENSES,insurance,8400,Annual hazard insurance
+EXPENSES,property_management,0.08,Decimal of EGI or dollar amount if over 1000
+EXPENSES,maintenance_repairs,12000,Annual
+EXPENSES,utilities,4800,Landlord paid annual
+EXPENSES,landscaping_trash,3600,Annual
+EXPENSES,capex_reserve,0.05,Decimal of EGI or dollar amount if over 1000
+EXPENSES,expense_growth_rate,0.025,Annual expense escalation
+ASSUMPTIONS,hold_period_years,10,Projection horizon
+ASSUMPTIONS,discount_rate,0.08,For NPV calculation
+ASSUMPTIONS,exit_cap_rate,0.0550,Assumed sale cap rate
+ASSUMPTIONS,cost_of_sale,0.03,Broker + closing costs at exit
+WATERFALL,structure,none,Set to LP/GP to enable waterfall sheet
+WATERFALL,lp_equity_pct,0.90,LP share of equity
+WATERFALL,gp_equity_pct,0.10,GP share of equity
+WATERFALL,preferred_return,0.08,LP preferred return hurdle
+WATERFALL,promote_pct,0.20,GP promote above preferred return
