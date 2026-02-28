@@ -118,8 +118,10 @@ WATERFALL,promote_pct,0.20,GP promote above preferred return
 
 
 # ── Core: run the model ───────────────────────────────────────────────────────
+MODEL_VERSION = "v4-formulas"   # bump this to bust Streamlit's cache
+
 @st.cache_data(show_spinner=False)
-def run_model(file_bytes: bytes, filename: str):
+def run_model(file_bytes: bytes, filename: str, version: str = MODEL_VERSION):
     from realty_model.parsers.csv_parser import CSVParser
     from realty_model.parsers.excel_parser import ExcelParser
     from realty_model.parsers.validator import validate_input
@@ -237,7 +239,9 @@ else:
     file_bytes = uploaded_file.read()
 
     with st.spinner("Building financial model..."):
-        results, inp, errors, warnings, xlsx_bytes = run_model(file_bytes, uploaded_file.name)
+        results, inp, errors, warnings, xlsx_bytes = run_model(
+            file_bytes, uploaded_file.name, MODEL_VERSION
+        )
 
     if warnings:
         for w in warnings:

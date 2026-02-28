@@ -83,7 +83,6 @@ class AssumptionsRenderer(BaseRenderer):
 
         # ── FINANCING ────────────────────────────────────────────────────────
         section(10, "FINANCING")
-        input_row(11, "Interest Rate",   f.interest_rate,              fmt='pct',     note='Annual (e.g. 0.0675 = 6.75%)')
         input_row(ASM_LOAN_AMOUNT_ROW,   "Loan Amount",    f.loan_amount,            fmt='currency')
         input_row(ASM_INTEREST_RATE_ROW, "Interest Rate",  f.interest_rate,          fmt='pct')
         input_row(ASM_LOAN_TERM_ROW,     "Loan Term (yrs)",f.loan_term_years,        fmt='int')
@@ -109,7 +108,6 @@ class AssumptionsRenderer(BaseRenderer):
 
         # ── INCOME ────────────────────────────────────────────────────────
         section(19, "INCOME")
-        input_row(20, "Annual Gross Rent (100% occ.)", i.gross_scheduled_rent, fmt='currency')
         input_row(ASM_GROSS_RENT_ROW,   "Gross Scheduled Rent",  i.gross_scheduled_rent, fmt='currency', note='Annual at 100% occupancy')
         input_row(ASM_VACANCY_ROW,      "Vacancy Rate",           i.vacancy_rate,          fmt='pct',      note='e.g. 0.05 = 5%')
         input_row(ASM_OTHER_INCOME_ROW, "Other Income",           i.other_income,          fmt='currency', note='Parking, laundry, etc. (annual)')
@@ -117,7 +115,6 @@ class AssumptionsRenderer(BaseRenderer):
 
         # ── EXPENSES ─────────────────────────────────────────────────────
         section(25, "OPERATING EXPENSES")
-        input_row(26, "Expense Growth Rate",        e.expense_growth_rate,      fmt='pct')
         input_row(ASM_TAXES_ROW,       "Property Taxes",          e.property_taxes,           fmt='currency', note='Annual')
         input_row(ASM_INSURANCE_ROW,   "Insurance",               e.insurance,                fmt='currency', note='Annual')
         input_row(ASM_MGMT_ROW,        "Property Management",     e.property_management,      fmt='pct' if e.property_management < 1 else 'currency', note='% of EGI (e.g. 0.08) or fixed $')
@@ -129,7 +126,6 @@ class AssumptionsRenderer(BaseRenderer):
 
         # ── HOLD ASSUMPTIONS ─────────────────────────────────────────────
         section(35, "HOLD & EXIT ASSUMPTIONS")
-        input_row(36, "",                           '',                         fmt='text')
         input_row(ASM_HOLD_YEARS_ROW,    "Hold Period (years)",    a.hold_period_years,        fmt='int',      note='Projection horizon')
         input_row(ASM_DISCOUNT_RATE_ROW, "Discount Rate (NPV)",    a.discount_rate,            fmt='pct',      note='e.g. 0.08 = 8%')
         input_row(ASM_EXIT_CAP_ROW,      "Exit Cap Rate",          a.exit_cap_rate,            fmt='pct',      note='Assumed sale cap rate')
