@@ -18,8 +18,16 @@ class BaseParser(ABC):
             if default is not None:
                 return float(default)
             raise KeyError(f"Required field missing: {key}")
+        # Sanitize: strip whitespace, $, commas, quotes
+        cleaned = str(val).strip().replace(',', '').replace('$', '').replace('"', '').replace("'", '')
+        # Handle percentage strings like "5%" -> 0.05
+        if cleaned.endswith('%'):
+            try:
+                return float(cleaned[:-1]) / 100.0
+            except ValueError:
+                pass
         try:
-            return float(str(val).strip())
+            return float(cleaned)
         except ValueError:
             raise ValueError(f"Cannot parse '{val}' as a number for field '{key}'")
 

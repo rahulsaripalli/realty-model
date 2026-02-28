@@ -125,23 +125,35 @@ def run_model(file_bytes: bytes, filename: str):
     from realty_model.parsers.validator import validate_input
     from realty_model.cli import calculate_all
     from realty_model.renderers.workbook import WorkbookRenderer
+    from realty_model.parsers.validator import ValidationError
 
     suffix = Path(filename).suffix.lower()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_in:
-        tmp_in.write(file_bytes)
-        tmp_in_path = tmp_in.name
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_in:
+            tmp_in.write(file_bytes)
+            tmp_in.flush()
+            tmp_in_path = tmp_in.name
 
-    if suffix == ".csv":
-        inp = CSVParser().parse(tmp_in_path)
-    else:
-        inp = ExcelParser().parse(tmp_in_path)
+        if suffix == ".csv":
+            inp = CSVParser().parse(tmp_in_path)
+        else:
+            inp = ExcelParser().parse(tmp_in_path)
+    except KeyError as e:
+        return None, None, [ValidationError("input", f"Missing required field: {e}")], [], None
+    except ValueError as e:
+        return None, None, [ValidationError("input", str(e))], [], None
+    except Exception as e:
+        return None, None, [ValidationError("input", f"Could not read file: {e}")], [], None
 
     errors, warnings = validate_input(inp)
     if errors:
         return None, None, errors, warnings, None
 
-    results = calculate_all(inp)
+    try:
+        results = calculate_all(inp)
+    except Exception as e:
+        return None, None, [ValidationError("calculation", f"Model error: {e}")], [], None
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_out:
         tmp_out_path = tmp_out.name
